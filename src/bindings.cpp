@@ -35,7 +35,8 @@ PYBIND11_MODULE(mytensor, m) {
         .def("fill", &Tensor::fill)
         .def("to", [](const Tensor& t, Device device) {
             if (device == Device::CPU) return t.cpu();
-            else return t.gpu();
+            else if (device == Device::GPU) return t.gpu();
+            else throw std::invalid_argument("Unsupported device");
         }, py::arg("device"))
         .def("numpy", [](const Tensor& t) {
             std::vector<float> vec = t.cpu().to_vector();
