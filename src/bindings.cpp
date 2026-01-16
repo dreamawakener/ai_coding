@@ -30,6 +30,9 @@ PYBIND11_MODULE(mytensor, m) {
         .def("size", &Tensor::size)
         .def("cpu", &Tensor::cpu)
         .def("gpu", &Tensor::gpu)
+        .def("to", [](const Tensor& self, Device device) {
+            return (device == Device::CPU) ? self.cpu() : self.gpu();
+        }, py::arg("device"))
         .def("clone", &Tensor::clone)
         .def("to_vector", &Tensor::to_vector)
         .def("fill", &Tensor::fill)
@@ -84,4 +87,17 @@ PYBIND11_MODULE(mytensor, m) {
     // [新增] 暴露优化器
     py::class_<Optimizer>(m, "Optimizer")
         .def_static("sgd_momentum", &Optimizer::sgd_momentum);
+    
+    // Factory functions for creating tensors
+    m.def("zeros", [](const std::vector<int>& shape, Device device) {
+        Tensor t(shape, device);
+        t.zeros();
+        return t;
+    }, py::arg("shape"), py::arg("device")=Device::CPU);
+    
+    m.def("zeros_like", [](const Tensor& input) {
+        Tensor t(input.shape(), input.device());
+        t.zeros();
+        return t;
+    }, py::arg("input"));
 }
