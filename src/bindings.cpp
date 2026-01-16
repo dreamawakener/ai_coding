@@ -32,6 +32,7 @@ PYBIND11_MODULE(mytensor, m) {
         .def("gpu", &Tensor::gpu)
         .def("clone", &Tensor::clone)
         .def("to_vector", &Tensor::to_vector)
+        .def("zeros", &Tensor::zeros)
         .def("fill", &Tensor::fill)
         .def("numpy", [](const Tensor& t) {
             std::vector<float> vec = t.cpu().to_vector();

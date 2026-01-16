@@ -175,9 +175,7 @@ class SGD:
         self.velocities = []
         for p in params:
             v = mytensor.Tensor(p.data.shape(), mytensor.Device.GPU)
-            # 修改点: 用 fill 代替 zeros (C++ 绑定漏了 zeros)
-            # 这一步只在初始化执行一次，不会影响训练速度
-            v.fill([0.0] * int(v.size())) 
+            v.zeros()
             self.velocities.append(v)
         
     def step(self):
