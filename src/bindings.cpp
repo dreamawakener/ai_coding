@@ -33,6 +33,11 @@ PYBIND11_MODULE(mytensor, m) {
         .def("clone", &Tensor::clone)
         .def("to_vector", &Tensor::to_vector)
         .def("fill", &Tensor::fill)
+        .def("to", [](const Tensor& t, Device device) {
+            if (device == Device::CPU) return t.cpu();
+            else if (device == Device::GPU) return t.gpu();
+            else throw std::invalid_argument("Unsupported device");
+        }, py::arg("device"))
         .def("numpy", [](const Tensor& t) {
             std::vector<float> vec = t.cpu().to_vector();
             std::vector<ssize_t> shape;
@@ -80,6 +85,19 @@ PYBIND11_MODULE(mytensor, m) {
             float loss = SoftMax::cross_entropy_with_softmax(logits, labels, grad);
             return std::make_pair(loss, grad);
         });
+    
+    // Factory functions for creating zero-initialized tensors
+    m.def("zeros", [](const std::vector<int>& shape, Device device) {
+        Tensor t(shape, device);
+        t.zeros();
+        return t;
+    }, py::arg("shape"), py::arg("device")=Device::CPU);
+    
+    m.def("zeros_like", [](const Tensor& input) {
+        Tensor t(input.shape(), input.device());
+        t.zeros();
+        return t;
+    }, py::arg("input"));
         
     // [新增] 暴露优化器
     py::class_<Optimizer>(m, "Optimizer")
