@@ -33,6 +33,7 @@ PYBIND11_MODULE(mytensor, m) {
         .def("clone", &Tensor::clone)
         .def("to_vector", &Tensor::to_vector)
         .def("fill", &Tensor::fill)
+        .def("zeros", &Tensor::zeros)
         .def("numpy", [](const Tensor& t) {
             std::vector<float> vec = t.cpu().to_vector();
             std::vector<ssize_t> shape;
