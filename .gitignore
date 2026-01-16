@@ -1,0 +1,20 @@
+# CodeQL
+_codeql_detected_source_root
+
+# Build artifacts
+build/
+dist/
+*.so
+*.pyd
+*.egg-info/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
