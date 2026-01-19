@@ -1,0 +1,373 @@
+\documentclass[UTF8, a4paper, 12pt]{ctexart}
+
+%===========================================================
+% 宏包导入
+%===========================================================
+\usepackage{geometry}       % 页面布局
+\usepackage{amsmath}        % 数学公式
+\usepackage{amsfonts}       % 数学字体
+\usepackage{graphicx}       % 图片支持
+\usepackage{booktabs}       % 三线表 (用于专业的表格线)
+\usepackage{hyperref}       % 超链接
+\usepackage{xcolor}         % 颜色支持
+\usepackage{listings}       % 代码块支持
+\usepackage{float}          % 浮动体控制
+
+%===========================================================
+% 格式设置
+%===========================================================
+% 页面边距设置
+\geometry{left=2.54cm,right=2.54cm,top=2.54cm,bottom=2.54cm}
+
+% 超链接颜色设置
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    filecolor=magenta,      
+    urlcolor=blue,
+    citecolor=black,
+    pdftitle={人工智能编程大作业实验报告},
+    pdfauthor={董彦嘉}
+}
+
+% 代码块样式设置
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize, % 使用等宽字体
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=4,
+    frame=single,                    %哪怕代码很少也显示边框
+    rulecolor=\color{black!30}       % 边框颜色
+}
+
+\lstset{style=mystyle}
+
+%===========================================================
+% 文档头部信息
+%===========================================================
+\title{\textbf{人工智能编程大作业实验报告：\\Task 3 自定义卷积网络框架与 PyTorch 性能对比}}
+\author{学号：2400013169 \quad 姓名：董彦嘉}
+\date{2026年1月16日}
+
+%===========================================================
+% 正文开始
+%===========================================================
+\begin{document}
+
+\maketitle
+
+% 摘要
+\begin{abstract}
+本实验旨在脱离现有的深度学习框架，基于 CUDA、pybind11 和 Python 自主实现一个卷积神经网络框架 \texttt{mytensor}。实验成功实现了卷积层的前向传播与反向传播算子，构建了自动微分机制，并在 CIFAR-10 数据集上完成了图像分类任务。结果显示，自定义框架达到了 54.07\% 的测试准确率。虽然成功验证了底层算法的正确性，但在执行效率（比 PyTorch 慢约 8\%）和收敛稳定性上与工业级框架仍存在差距。本报告详细对比了两者在算子优化、内存管理及数值稳定性方面的差异。
+\end{abstract}
+
+% 目录（可选，如不需要可注释掉）
+% \tableofcontents
+% \newpage
+
+\section{实验背景}
+本次实验旨在通过实现 CIFAR-10 数据集的图像分类任务，深入理解深度学习框架的底层原理 [2]。实验分为两个主要部分：
+\begin{enumerate}
+    \item 使用工业级框架 PyTorch 进行标准实现，作为性能基准（Benchmark）[7]。
+    \item 基于 CUDA、pybind11 和 Python 自主实现一个卷积网络框架（\texttt{mytensor}），并完成前向传播、反向传播及自动微分逻辑 [36, 38]。
+\end{enumerate}
+
+\section{实验方法与设置}
+
+\subsection{网络架构}
+为了公平对比，实验在两个框架中均采用类 LeNet 结构 [37]：
+\begin{itemize}
+    \item \textbf{卷积层 1}: 3 输入通道, 6 输出通道, $3\times3$ 卷积核, padding=1。
+    \item \textbf{池化层 1}: $2\times2$ Max Pooling。
+    \item \textbf{卷积层 2}: 6 输入通道, 16 输出通道, $3\times3$ 卷积核, padding=1。
+    \item \textbf{池化层 2}: $2\times2$ Max Pooling。
+    \item \textbf{全连接层}: 三层 MLP（多层感知机），最终输出 10 类概率。
+\end{itemize}
+
+\subsection{训练配置}
+\begin{itemize}
+    \item \textbf{硬件环境}: 使用支持 CUDA 的 GPU 进行加速训练 [41]。
+    \item \textbf{超参数}: Batch Size = 64，Momentum = 0.9。
+    \item \textbf{学习率}: 初始学习率 0.01，第 10 轮后衰减至 0.001。
+    \item \textbf{数据集}: CIFAR-10 训练集用于参数优化，测试集用于评估准确率。
+\end{itemize}
+
+\section{实验结果对比}
+
+根据实际运行输出，汇总性能指标如表 \ref{tab:comparison} 所示：
+
+\begin{table}[htbp]
+\centering
+\caption{自定义框架 (mytensor) 与 PyTorch 框架性能对比}
+\label{tab:comparison}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{指标} & \textbf{自定义框架 (mytensor)} & \textbf{PyTorch 框架} & \textbf{差异 (PyTorch 为基准)} \\ \midrule
+训练总耗时 (s) & 327.35 & 303.09 & +8.0\% \\
+最终测试准确率 & 54.07\% & 66.78\% & -12.71\% \\
+收敛平稳性 & 波动较大 & 相对平稳 & - \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\section{讨论与分析}
+
+\subsection{执行效率分析}
+PyTorch 的训练速度比自定义框架快约 24.26 秒（约 8\%）。分析原因如下：
+\begin{itemize}
+    \item \textbf{算子优化}: PyTorch 底层调用了高度优化的 cuDNN 库，而自定义 CUDA 实现采用了基础的 im2col 算法，在内存访问模式（Memory Access Pattern）和线程块调度上存在提升空间 [43]。
+    \item \textbf{内存管理}: PyTorch 拥有成熟的显存池（Caching Allocator）管理机制，减少了频繁申请和释放显存的系统调用开销。
+    \item \textbf{数据交互}: 自定义代码中存在 \texttt{inputs.numpy()} 调用，这在每一批次都引入了额外的 CPU-GPU 数据拷贝开销。
+\end{itemize}
+
+\subsection{准确率与收敛分析}
+PyTorch 最终达到了 66.78\% 的准确率，显著优于自定义框架。
+\begin{itemize}
+    \item \textbf{权重初始化}: PyTorch 默认使用 Kaiming 或 Xavier 初始化，适配 ReLU 激活函数；而自定义框架使用了简单的随机均匀分布，导致初期训练梯度传递效率较低。
+    \item \textbf{数值稳定性}: PyTorch 的 \texttt{CrossEntropyLoss} 在数学上进行了 Log-Sum-Exp 技巧优化，避免了溢出风险；自定义框架的 Loss 值（0.03-0.09）与 PyTorch（0.2-2.3）存在数量级差异，说明 Loss 函数的缩放比例或计算细节不一致。
+\end{itemize}
+
+\section{结论}
+本实验成功复现了卷积网络在两个不同层级框架上的训练过程 [53]。实验证明，自主实现的 CUDA 算子与自动微分框架能够完成基本的分类任务，但在极端性能优化和数值稳定性方面与成熟框架仍有差距。未来的改进方向应集中在 CUDA kernel 的共享内存（Shared Memory）优化以及更精细的参数初始化策略上。
+
+%===========================================================
+% 附录
+%===========================================================
+\appendix
+\section{附录：核心代码实现}
+
+\subsection{CUDA 卷积算子 (im2col 示意)}
+\begin{lstlisting}[language=C++]
+__global__ void im2col_kernel(const float* data_im, float* data_col, 
+                              int channels, int height, int width, 
+                              int ksize, int pad, int stride, 
+                              int height_col, int width_col) {
+    // 计算全局索引
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    const int n = height_col * width_col * channels;
+    
+    if (index < n) {
+        int w_out = index % width_col;
+        int h_out = (index / width_col) % height_col;
+        int c_in = index / width_col / height_col;
+        
+        // ... (im2col 坐标映射逻辑) ...
+    }
+}
+\end{lstlisting}
+
+\subsection{Python 自动微分调用}
+\begin{lstlisting}[language=Python]
+class Conv2D(Module):
+    def __init__(self, in_channels, out_channels, ksize):
+        # 权重初始化（随机均匀分布）
+        self.weight = Tensor.uniform(out_channels, in_channels, ksize, ksize)
+    
+    def forward(self, x):
+        # 调用 C++ 扩展 (mytensor_backend)
+        return mytensor_backend.conv2d(x, self.weight)
+\end{lstlisting}
+
+\end{document}\documentclass[UTF8, a4paper, 12pt]{ctexart}
+
+%===========================================================
+% 宏包导入
+%===========================================================
+\usepackage{geometry}       % 页面布局
+\usepackage{amsmath}        % 数学公式
+\usepackage{amsfonts}       % 数学字体
+\usepackage{graphicx}       % 图片支持
+\usepackage{booktabs}       % 三线表 (用于专业的表格线)
+\usepackage{hyperref}       % 超链接
+\usepackage{xcolor}         % 颜色支持
+\usepackage{listings}       % 代码块支持
+\usepackage{float}          % 浮动体控制
+
+%===========================================================
+% 格式设置
+%===========================================================
+% 页面边距设置
+\geometry{left=2.54cm,right=2.54cm,top=2.54cm,bottom=2.54cm}
+
+% 超链接颜色设置
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    filecolor=magenta,      
+    urlcolor=blue,
+    citecolor=black,
+    pdftitle={人工智能编程大作业实验报告},
+    pdfauthor={董彦嘉}
+}
+
+% 代码块样式设置
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize, % 使用等宽字体
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=4,
+    frame=single,                    %哪怕代码很少也显示边框
+    rulecolor=\color{black!30}       % 边框颜色
+}
+
+\lstset{style=mystyle}
+
+%===========================================================
+% 文档头部信息
+%===========================================================
+\title{\textbf{人工智能编程大作业实验报告：\\Task 3 自定义卷积网络框架与 PyTorch 性能对比}}
+\author{学号：2400013169 \quad 姓名：董彦嘉}
+\date{2026年1月16日}
+
+%===========================================================
+% 正文开始
+%===========================================================
+\begin{document}
+
+\maketitle
+
+% 摘要
+\begin{abstract}
+本实验旨在脱离现有的深度学习框架，基于 CUDA、pybind11 和 Python 自主实现一个卷积神经网络框架 \texttt{mytensor}。实验成功实现了卷积层的前向传播与反向传播算子，构建了自动微分机制，并在 CIFAR-10 数据集上完成了图像分类任务。结果显示，自定义框架达到了 54.07\% 的测试准确率。虽然成功验证了底层算法的正确性，但在执行效率（比 PyTorch 慢约 8\%）和收敛稳定性上与工业级框架仍存在差距。本报告详细对比了两者在算子优化、内存管理及数值稳定性方面的差异。
+\end{abstract}
+
+% 目录（可选，如不需要可注释掉）
+% \tableofcontents
+% \newpage
+
+\section{实验背景}
+本次实验旨在通过实现 CIFAR-10 数据集的图像分类任务，深入理解深度学习框架的底层原理 [2]。实验分为两个主要部分：
+\begin{enumerate}
+    \item 使用工业级框架 PyTorch 进行标准实现，作为性能基准（Benchmark）[7]。
+    \item 基于 CUDA、pybind11 和 Python 自主实现一个卷积网络框架（\texttt{mytensor}），并完成前向传播、反向传播及自动微分逻辑 [36, 38]。
+\end{enumerate}
+
+\section{实验方法与设置}
+
+\subsection{网络架构}
+为了公平对比，实验在两个框架中均采用类 LeNet 结构 [37]：
+\begin{itemize}
+    \item \textbf{卷积层 1}: 3 输入通道, 6 输出通道, $3\times3$ 卷积核, padding=1。
+    \item \textbf{池化层 1}: $2\times2$ Max Pooling。
+    \item \textbf{卷积层 2}: 6 输入通道, 16 输出通道, $3\times3$ 卷积核, padding=1。
+    \item \textbf{池化层 2}: $2\times2$ Max Pooling。
+    \item \textbf{全连接层}: 三层 MLP（多层感知机），最终输出 10 类概率。
+\end{itemize}
+
+\subsection{训练配置}
+\begin{itemize}
+    \item \textbf{硬件环境}: 使用支持 CUDA 的 GPU 进行加速训练 [41]。
+    \item \textbf{超参数}: Batch Size = 64，Momentum = 0.9。
+    \item \textbf{学习率}: 初始学习率 0.01，第 10 轮后衰减至 0.001。
+    \item \textbf{数据集}: CIFAR-10 训练集用于参数优化，测试集用于评估准确率。
+\end{itemize}
+
+\section{实验结果对比}
+
+根据实际运行输出，汇总性能指标如表 \ref{tab:comparison} 所示：
+
+\begin{table}[htbp]
+\centering
+\caption{自定义框架 (mytensor) 与 PyTorch 框架性能对比}
+\label{tab:comparison}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{指标} & \textbf{自定义框架 (mytensor)} & \textbf{PyTorch 框架} & \textbf{差异 (PyTorch 为基准)} \\ \midrule
+训练总耗时 (s) & 327.35 & 303.09 & +8.0\% \\
+最终测试准确率 & 54.07\% & 66.78\% & -12.71\% \\
+收敛平稳性 & 波动较大 & 相对平稳 & - \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\section{讨论与分析}
+
+\subsection{执行效率分析}
+PyTorch 的训练速度比自定义框架快约 24.26 秒（约 8\%）。分析原因如下：
+\begin{itemize}
+    \item \textbf{算子优化}: PyTorch 底层调用了高度优化的 cuDNN 库，而自定义 CUDA 实现采用了基础的 im2col 算法，在内存访问模式（Memory Access Pattern）和线程块调度上存在提升空间 [43]。
+    \item \textbf{内存管理}: PyTorch 拥有成熟的显存池（Caching Allocator）管理机制，减少了频繁申请和释放显存的系统调用开销。
+    \item \textbf{数据交互}: 自定义代码中存在 \texttt{inputs.numpy()} 调用，这在每一批次都引入了额外的 CPU-GPU 数据拷贝开销。
+\end{itemize}
+
+\subsection{准确率与收敛分析}
+PyTorch 最终达到了 66.78\% 的准确率，显著优于自定义框架。
+\begin{itemize}
+    \item \textbf{权重初始化}: PyTorch 默认使用 Kaiming 或 Xavier 初始化，适配 ReLU 激活函数；而自定义框架使用了简单的随机均匀分布，导致初期训练梯度传递效率较低。
+    \item \textbf{数值稳定性}: PyTorch 的 \texttt{CrossEntropyLoss} 在数学上进行了 Log-Sum-Exp 技巧优化，避免了溢出风险；自定义框架的 Loss 值（0.03-0.09）与 PyTorch（0.2-2.3）存在数量级差异，说明 Loss 函数的缩放比例或计算细节不一致。
+\end{itemize}
+
+\section{结论}
+本实验成功复现了卷积网络在两个不同层级框架上的训练过程 [53]。实验证明，自主实现的 CUDA 算子与自动微分框架能够完成基本的分类任务，但在极端性能优化和数值稳定性方面与成熟框架仍有差距。未来的改进方向应集中在 CUDA kernel 的共享内存（Shared Memory）优化以及更精细的参数初始化策略上。
+
+%===========================================================
+% 附录
+%===========================================================
+\appendix
+\section{附录：核心代码实现}
+
+\subsection{CUDA 卷积算子 (im2col 示意)}
+\begin{lstlisting}[language=C++]
+__global__ void im2col_kernel(const float* data_im, float* data_col, 
+                              int channels, int height, int width, 
+                              int ksize, int pad, int stride, 
+                              int height_col, int width_col) {
+    // 计算全局索引
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    const int n = height_col * width_col * channels;
+    
+    if (index < n) {
+        int w_out = index % width_col;
+        int h_out = (index / width_col) % height_col;
+        int c_in = index / width_col / height_col;
+        
+        // ... (im2col 坐标映射逻辑) ...
+    }
+}
+\end{lstlisting}
+
+\subsection{Python 自动微分调用}
+\begin{lstlisting}[language=Python]
+class Conv2D(Module):
+    def __init__(self, in_channels, out_channels, ksize):
+        # 权重初始化（随机均匀分布）
+        self.weight = Tensor.uniform(out_channels, in_channels, ksize, ksize)
+    
+    def forward(self, x):
+        # 调用 C++ 扩展 (mytensor_backend)
+        return mytensor_backend.conv2d(x, self.weight)
+\end{lstlisting}
+
+\end{document}
